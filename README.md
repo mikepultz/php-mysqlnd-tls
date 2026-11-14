@@ -51,14 +51,31 @@ the decision to the place the administrator controls.
 pie install mikepultz/php-mysqlnd-tls
 ```
 
-[PIE](https://github.com/php/pie) installs a pre-built binary when the release
-carries one for your PHP version and platform, and builds from source
-otherwise. Building needs a compiler and the PHP development files, which
-include the mysqlnd headers. To build from source even when a binary exists:
+Each release carries pre-built binaries for PHP 7.4 through 8.6 on x86_64 and
+arm64, for Linux with glibc and the non-thread-safe PHP that distributions
+ship. [PIE](https://github.com/php/pie) installs the one that matches, so no
+compiler is needed. They are built on AlmaLinux 9 against Remi's PHP, and each
+one passes the test suite on Remi's PHP and on the official PHP image before it
+is published: a module built against one distribution's PHP loads in another's
+of the same minor version.
+
+Where no binary matches (musl, a thread-safe PHP), PIE builds from source,
+which needs a compiler and the PHP development files; those include the mysqlnd
+headers. To build from source even when a binary exists:
 
 ```sh
 pie install mikepultz/php-mysqlnd-tls --enable-mysqlnd-tls
 ```
+
+PIE installs into the PHP it finds on the `PATH`. For a PHP that lives
+elsewhere, such as one of Remi's parallel `php83` packages, put it first:
+
+```sh
+PATH=/opt/remi/php83/root/usr/bin:$PATH pie install mikepultz/php-mysqlnd-tls
+```
+
+PIE itself runs on PHP 8.1 or later. Where the only PHP is older, use PIE's
+standalone executable, which carries its own.
 
 ### From source
 
@@ -71,11 +88,13 @@ sudo make install
 
 Then load it with `extension=mysqlnd_tls` in an ini file that is read **after**
 the one that loads mysqlnd (PIE names the file `40-mysqlnd_tls.ini` for that
-reason). Where mysqlnd is a shared module, as it is on the Red Hat and Debian
-families, loading `mysqlnd_tls` first fails with an undefined symbol error.
+reason). Where mysqlnd is a shared module, as in the Red Hat family's packages,
+loading `mysqlnd_tls` first fails with an `undefined symbol` warning and PHP
+carries on without it.
 
-Loading the extension changes nothing by itself: it is off until
-`mysqlnd_tls.enabled` is set.
+Check that it is there with `php -m`: a PHP that did not load the extension
+runs normally and applies no policy. Loading it changes nothing by itself
+either: it is off until `mysqlnd_tls.enabled` is set.
 
 ## Settings
 
@@ -148,11 +167,14 @@ With `mysqlnd_tls.verify = On`:
   (`MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT`,
   `PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false`) is verified anyway.
 
-With `mysqlnd_tls.verify = Off` the extension forces TLS and nothing else.
-Verification is left exactly as the application asked for it: an application
-with no TLS settings of its own gets an encrypted, unverified connection, and
-one that verifies with its own CA is still verified. Use this for a server
-whose certificate cannot be verified, such as one reached by IP address.
+With `mysqlnd_tls.verify = Off` the connection is encrypted but the certificate
+is not checked, and that applies just as firmly: an application that asks for
+verification itself, with its own CA or the verify flag, is not verified
+either. Use this for a server whose certificate cannot be verified, such as one
+reached by IP address.
+
+Either way the setting decides, never the application, so every application
+connecting to a listed host gets the same result.
 
 In both cases an application's client certificate and key are kept, so
 accounts that require one keep working, and an application that already asks
@@ -209,14 +231,18 @@ one source tree builds on every PHP version from 7.4 on.
 
 The suite in `tests/` needs two MySQL servers, one with TLS and one without,
 reached by fixed host names. `tests/rig` provides them with Docker, builds the
-extension inside an official PHP image with warnings as errors, and runs the
-suite:
+extension inside a PHP image with warnings as errors, and runs the suite:
 
 ```sh
-tests/rig/rig.sh run                 # PHP 8.5
+tests/rig/rig.sh run                 # the official PHP 8.5 image
 tests/rig/rig.sh run php:7.4-cli     # any official PHP image
+tests/rig/rig.sh run remi:8.3        # AlmaLinux 9 with Remi's PHP 8.3
 tests/rig/rig.sh down                # stop the servers
 ```
+
+A second argument names a `mysqlnd_tls.so` to test in place of building one,
+which is how the release binaries are tested.
+`.github/scripts/build-binary.sh` builds such a binary.
 
 Without the rig, `make test` runs the tests that need no server and skips the
 rest.

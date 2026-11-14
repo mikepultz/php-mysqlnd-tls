@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Mike Pultz. Licensed under BSD-3-Clause.
+#
+# AlmaLinux 9 with one of Remi's PHP versions, selected in rig.sh with
+# "remi:<version>". Unlike the official images, mysqlnd is a shared module
+# here, as in the Red Hat family's own packages, so this image covers
+# loading mysqlnd_tls next to a shared mysqlnd.
+
+FROM almalinux:9
+
+ARG PHP_VERSION=8.5
+
+RUN v="$(echo "${PHP_VERSION}" | tr -d .)" \
+ && dnf -y -q install https://rpms.remirepo.net/enterprise/remi-release-9.rpm \
+ && dnf -y -q install gcc make autoconf automake libtool \
+        "php${v}-php-cli" "php${v}-php-devel" "php${v}-php-mysqlnd" \
+ && dnf clean all \
+ && ln -s "/opt/remi/php${v}/root/usr/bin" /opt/php-bin
+
+ENV PATH=/opt/php-bin:$PATH

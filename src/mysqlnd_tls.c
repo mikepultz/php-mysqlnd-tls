@@ -138,13 +138,16 @@ MYSQLND_METHOD(mysqlnd_tls, connect)(MYSQLND_CONN_DATA *conn,
 
 			mysql_flags |= CLIENT_SSL_VERIFY_SERVER_CERT;
 			mysql_flags &= ~CLIENT_SSL_DONT_VERIFY_SERVER_CERT;
+		} else {
+			/*
+			 * verify off applies just as firmly: an application
+			 * that asks for verification itself is not verified
+			 * either, so the setting means the same for every
+			 * application.
+			 */
+			mysql_flags |= CLIENT_SSL_DONT_VERIFY_SERVER_CERT;
+			mysql_flags &= ~CLIENT_SSL_VERIFY_SERVER_CERT;
 		}
-
-		/*
-		 * with verify off only TLS is forced: verification is left
-		 * exactly as the application asked for it, so a stricter
-		 * application is never weakened.
-		 */
 	}
 
 	return mysqlnd_tls_orig_connect(conn, hostname, username, password,

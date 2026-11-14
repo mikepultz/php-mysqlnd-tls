@@ -58,8 +58,10 @@ services:
   php:
     build:
       context: .
+      dockerfile: ${RIG_DOCKERFILE:-Dockerfile}
       args:
         PHP_IMAGE: ${PHP_IMAGE:-php:8.5-cli}
+        PHP_VERSION: ${RIG_PHP_VERSION:-8.5}
     image: mysqlnd-tls-rig:${RIG_TAG:-php-8.5-cli}
     profiles:
       - run
@@ -71,6 +73,8 @@ services:
     volumes:
       - ../..:/src:ro
       - sock:/var/run/mysqld
+      # a binary to test in place of building one; empty when there is none
+      - ${RIG_PREBUILT:-/dev/null}:/prebuilt/mysqlnd_tls.so:ro
     command: ["sh", "/src/tests/rig/run-tests.sh"]
 
 volumes:

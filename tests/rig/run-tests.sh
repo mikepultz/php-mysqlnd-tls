@@ -4,7 +4,8 @@
 #
 # Runs inside the rig's PHP container: builds the extension from the
 # read-only /src mount in a scratch directory, with warnings as errors, and
-# runs the .phpt suite against the rig's MySQL servers.
+# runs the .phpt suite against the rig's MySQL servers. When rig.sh was given
+# a pre-built binary, that is tested and nothing is built.
 #
 set -e
 
@@ -20,12 +21,21 @@ cd /build
 
 php -v | head -1
 
+# also brings run-tests.php
 phpize > /dev/null 2>&1
-./configure > /dev/null
 
-if ! make CFLAGS="-g -O2 -Wall -Wextra -Wno-unused-parameter -Werror" > make.log 2>&1; then
-    cat make.log
-    exit 1
+if [ -s /prebuilt/mysqlnd_tls.so ]; then
+    echo "testing the pre-built binary"
+
+    mkdir -p modules
+    cp /prebuilt/mysqlnd_tls.so modules/
+else
+    ./configure > /dev/null
+
+    if ! make CFLAGS="-g -O2 -Wall -Wextra -Wno-unused-parameter -Werror" > make.log 2>&1; then
+        cat make.log
+        exit 1
+    fi
 fi
 
 #

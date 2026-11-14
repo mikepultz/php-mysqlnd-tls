@@ -1,0 +1,156 @@
+name: Release binaries
+
+# Builds the pre-built binaries that PIE installs, tests each one, attaches
+# them to the GitHub release, and then installs them with PIE.
+#
+# Runs when a release is published. It can also be started by hand for a
+# release that already exists, which rebuilds that release's binaries and
+# replaces them. Either way the source built is the tag's, with the tag's own
+# build script and tests.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the existing release to build the binaries for
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  # ------------------------------------------------------------------
+  # One binary per PHP minor version and architecture, built on
+  # AlmaLinux 9 against Remi's PHP (see .github/scripts/build-binary.sh).
+  # Each has to pass the whole suite before it is kept: on Remi's PHP,
+  # where mysqlnd is a shared module, and on the official PHP image,
+  # which is Debian with mysqlnd compiled in.
+  # ------------------------------------------------------------------
+  binary:
+    name: php-${{ matrix.php }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
+        arch: [x86_64, arm64]
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        run: .github/scripts/build-binary.sh '${{ matrix.php }}' "$TAG" dist
+
+      - name: Test on Remi's PHP
+        run: tests/rig/rig.sh run 'remi:${{ matrix.php }}' dist/mysqlnd_tls.so
+
+      # the official 8.6 image is a thread-safe build and this binary is
+      # not, so PHP would refuse to load it there
+      - name: Test on the official PHP image
+        if: ${{ matrix.php != '8.6' }}
+        run: tests/rig/rig.sh run 'php:${{ matrix.php }}-cli' dist/mysqlnd_tls.so
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binary-php${{ matrix.php }}-${{ matrix.arch }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Attach what was built and tested, even when another combination
+  # failed: the run still ends red, and the missing binary can be added
+  # by re-running its job.
+  # ------------------------------------------------------------------
+  publish:
+    name: attach the binaries to the release
+    needs: binary
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+
+  # ------------------------------------------------------------------
+  # The release as a user gets it: "pie install" on systems with no
+  # compiler has to find the binary, install it and load it. The last
+  # entry forces the other path, a build from source.
+  # ------------------------------------------------------------------
+  pie:
+    name: pie install / ${{ matrix.name }}
+    needs: publish
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alma 9, stock php 8.0
+            image: almalinux:9
+            setup: dnf -y -q install git unzip php-cli php-mysqlnd
+            expect: Pre-packaged binary found
+
+          - name: alma 9, remi php 8.3
+            image: almalinux:9
+            setup: |
+              dnf -y -q install https://rpms.remirepo.net/enterprise/remi-release-9.rpm
+              dnf -y -q install git unzip php83-php-cli php83-php-mysqlnd
+              echo /opt/remi/php83/root/usr/bin >> "$GITHUB_PATH"
+            expect: Pre-packaged binary found
+
+          - name: alma 10, stock php 8.3
+            image: almalinux:10
+            setup: dnf -y -q install git unzip php-cli php-mysqlnd
+            expect: Pre-packaged binary found
+
+          - name: debian, official php 8.5
+            image: php:8.5-cli
+            setup: apt-get update && apt-get install -y --no-install-recommends git unzip
+            expect: Pre-packaged binary found
+
+          - name: alma 10, stock php 8.3, from source
+            image: almalinux:10
+            setup: dnf -y -q install git unzip php-cli php-mysqlnd php-devel gcc make autoconf automake libtool
+            flags: --enable-mysqlnd-tls
+            expect: Build complete
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install PHP
+        run: ${{ matrix.setup }}
+
+      - name: Install PIE
+        run: |
+          curl -sSL -o /usr/local/bin/pie https://github.com/php/pie/releases/download/1.5.5/pie-Linux-X64
+          chmod +x /usr/local/bin/pie
+
+      - name: pie install
+        env:
+          COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ github.token }}"}}'
+        run: |
+          pie repository:add vcs "https://github.com/${GITHUB_REPOSITORY}"
+          pie install "mikepultz/php-mysqlnd-tls:${TAG}" ${{ matrix.flags }} | tee pie.log
+
+          grep -q '${{ matrix.expect }}' pie.log
+          php --ri mysqlnd_tls

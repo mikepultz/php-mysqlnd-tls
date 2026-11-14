@@ -8,33 +8,40 @@ on:
 jobs:
   # ------------------------------------------------------------------
   # The full suite, in the test rig (tests/rig): the extension is built
-  # inside the official PHP image for each version, with warnings as
-  # errors, and run against two MySQL 8.4 servers, one with TLS and one
-  # without. The rig fails on a skipped test, so every test runs.
-  # The zts images cover the thread-safe build.
+  # inside each image, with warnings as errors, and run against two
+  # MySQL 8.4 servers, one with TLS and one without. The rig fails on a
+  # skipped test, so every test runs.
+  #
+  # php:*   the official PHP images (Debian, mysqlnd compiled in); the
+  #         zts images cover the thread-safe build
+  # remi:*  AlmaLinux 9 with Remi's PHP, where mysqlnd is a shared module
   # ------------------------------------------------------------------
   tests:
-    name: php-${{ matrix.php }}
+    name: ${{ matrix.image }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php:
-          - '7.4-cli'
-          - '8.0-cli'
-          - '8.1-cli'
-          - '8.2-cli'
-          - '8.3-cli'
-          - '8.4-cli'
-          - '8.5-cli'
-          - '8.6-rc-cli'
-          - '7.4-zts'
-          - '8.5-zts'
+        image:
+          - 'php:7.4-cli'
+          - 'php:8.0-cli'
+          - 'php:8.1-cli'
+          - 'php:8.2-cli'
+          - 'php:8.3-cli'
+          - 'php:8.4-cli'
+          - 'php:8.5-cli'
+          - 'php:8.6-rc-cli'
+          - 'php:7.4-zts'
+          - 'php:8.5-zts'
+          - 'remi:7.4'
+          - 'remi:8.3'
+          - 'remi:8.4'
+          - 'remi:8.5'
     steps:
       - uses: actions/checkout@v5
 
       - name: Build and test
-        run: tests/rig/rig.sh run php:${{ matrix.php }}
+        run: tests/rig/rig.sh run '${{ matrix.image }}'
 
   # ------------------------------------------------------------------
   # Static analysis: cppcheck and GCC's -fanalyzer, both as hard gates
