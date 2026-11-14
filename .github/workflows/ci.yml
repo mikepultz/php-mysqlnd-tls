@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ------------------------------------------------------------------
+  # The full suite, in the test rig (tests/rig): the extension is built
+  # inside the official PHP image for each version, with warnings as
+  # errors, and run against two MySQL 8.4 servers, one with TLS and one
+  # without. The rig fails on a skipped test, so every test runs.
+  # The zts images cover the thread-safe build.
+  # ------------------------------------------------------------------
+  tests:
+    name: php-${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php:
+          - '7.4-cli'
+          - '8.0-cli'
+          - '8.1-cli'
+          - '8.2-cli'
+          - '8.3-cli'
+          - '8.4-cli'
+          - '8.5-cli'
+          - '8.6-rc-cli'
+          - '7.4-zts'
+          - '8.5-zts'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build and test
+        run: tests/rig/rig.sh run php:${{ matrix.php }}
+
+  # ------------------------------------------------------------------
+  # Static analysis: cppcheck and GCC's -fanalyzer, both as hard gates
+  # (-Werror).
+  # ------------------------------------------------------------------
+  static-analysis:
+    name: static analysis (cppcheck + gcc -fanalyzer)
+    runs-on: ubuntu-latest
+    container: php:8.5-cli
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cppcheck
+
+      # findings inside PHP's own headers are not ours to fix, and the two
+      # information notes would otherwise fail the run
+      - name: cppcheck
+        run: |
+          cppcheck --std=c11 --quiet --error-exitcode=1 --inline-suppr \
+            --enable=warning,performance,portability \
+            --suppress=missingIncludeSystem --suppress=missingInclude \
+            --suppress=preprocessorErrorDirective \
+            --suppress=normalCheckLevelMaxBranches --suppress=toomanyconfigs \
+            --suppress="*:$(php-config --include-dir)/*" \
+            $(php-config --includes) -I src -I . src/*.c
+
+      - name: gcc -fanalyzer (warnings as errors)
+        run: |
+          phpize
+          ./configure
+          make CFLAGS='-fanalyzer -g -O2 -Wall -Wextra -Wno-unused-parameter -Werror'

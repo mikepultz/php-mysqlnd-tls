@@ -1,0 +1,77 @@
+# Copyright (c) 2026 Mike Pultz. Licensed under BSD-3-Clause.
+#
+# The test rig: two MySQL servers and one PHP container that builds the
+# extension and runs the .phpt suite against them. Driven by ./rig.sh.
+#
+#   db.test     the TLS server, by the name its certificate is issued for
+#   alt.test    the same server, by a name its certificate does not carry
+#   plain.test  a server with TLS turned off
+
+name: mysqlnd-tls-rig
+
+services:
+  tls:
+    image: mysql:8.4
+    command:
+      - --ssl-ca=/certs/ca.pem
+      - --ssl-cert=/certs/server.pem
+      - --ssl-key=/certs/server.key
+      - --max-connect-errors=1000000
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: test
+    volumes:
+      - ./certs:/certs:ro
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - sock:/var/run/mysqld
+    networks:
+      default:
+        aliases:
+          - db.test
+          - alt.test
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass", "--silent", "--get-server-public-key"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+
+  plain:
+    image: mysql:8.4
+    command:
+      - --tls-version=
+      - --max-connect-errors=1000000
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: test
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      default:
+        aliases:
+          - plain.test
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass", "--silent", "--get-server-public-key"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+
+  php:
+    build:
+      context: .
+      args:
+        PHP_IMAGE: ${PHP_IMAGE:-php:8.5-cli}
+    image: mysqlnd-tls-rig:${RIG_TAG:-php-8.5-cli}
+    profiles:
+      - run
+    depends_on:
+      tls:
+        condition: service_healthy
+      plain:
+        condition: service_healthy
+    volumes:
+      - ../..:/src:ro
+      - sock:/var/run/mysqld
+    command: ["sh", "/src/tests/rig/run-tests.sh"]
+
+volumes:
+  sock:

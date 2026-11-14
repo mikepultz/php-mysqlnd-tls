@@ -1,0 +1,33 @@
+{
+    "name": "mikepultz/php-mysqlnd-tls",
+    "description": "Turns on TLS for PHP's MySQL connections (mysqli and PDO, through mysqlnd) from php.ini, with no application changes.",
+    "type": "php-ext",
+    "license": "BSD-3-Clause",
+    "keywords": ["mysql", "mysqlnd", "mysqli", "pdo_mysql", "tls", "ssl", "extension"],
+    "authors": [
+        {
+            "name": "Mike Pultz",
+            "email": "mike@mikepultz.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "ext-mysqlnd": "*",
+        "ext-openssl": "*"
+    },
+    "php-ext": {
+        "extension-name": "mysqlnd_tls",
+        "priority": 40,
+        "support-zts": true,
+        "support-nts": true,
+        "os-families-exclude": ["windows"],
+        "download-url-method": ["pre-packaged-binary", "composer-default"],
+        "configure-options": [
+            {
+                "name": "enable-mysqlnd-tls",
+                "description": "Build from source instead of installing a pre-built binary",
+                "needs-value": false
+            }
+        ]
+    }
+}
