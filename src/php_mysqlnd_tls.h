@@ -27,7 +27,7 @@
 # error "php-mysqlnd-tls requires PHP >= 7.4"
 #endif
 
-#define PHP_MYSQLND_TLS_VERSION "0.1.0"
+#define PHP_MYSQLND_TLS_VERSION "1.0.0"
 
 extern zend_module_entry mysqlnd_tls_module_entry;
 #define phpext_mysqlnd_tls_ptr &mysqlnd_tls_module_entry
